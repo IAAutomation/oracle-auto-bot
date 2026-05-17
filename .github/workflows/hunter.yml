@@ -1,45 +1,76 @@
 name: Oracle ARM Hunter
 
 on:
-  workflow_dispatch:
-  schedule:
-    # Night Hunter (Dubai 12AM → 7AM)
-    - cron: "*/10 20-23 * * *"
-    - cron: "*/10 0-2 * * *"
-    
-    # Day Hunter (Dubai 7AM → 6PM)
-    - cron: "*/20 3-13 * * *"
-    
-    # Evening Hunter (Dubai 6PM → 12AM)
-    - cron: "*/15 14-19 * * *"
+workflow_dispatch:
+
+schedule:
+
+```
+# Night Hunter
+- cron: "*/10 20-23 * * *"
+- cron: "*/10 0-2 * * *"
+
+# Day Hunter
+- cron: "*/20 3-13 * * *"
+
+# Evening Hunter
+- cron: "*/15 14-19 * * *"
+```
 
 jobs:
-  hunter:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      
-      - name: Install Requirements
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Setup OCI Private Key
-        run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > oci_api_key.pem
-          chmod 600 oci_api_key.pem
-      
-      - name: Run Hunter
-        env:
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-        run: python hunter.py
+
+hunter:
+
+```
+runs-on: ubuntu-latest
+
+steps:
+
+  - name: Checkout Repository
+    uses: actions/checkout@v4
+
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.11"
+
+  - name: Install Requirements
+    run: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+
+  - name: Setup OCI Private Key
+    shell: bash
+    run: |
+      printf "%s" "${{ secrets.OCI_PRIVATE_KEY }}" > oci_api_key.pem
+
+      echo "" >> oci_api_key.pem
+
+      chmod 600 oci_api_key.pem
+
+      echo "PEM created successfully"
+
+  - name: Debug PEM
+    shell: bash
+    run: |
+      echo "====== LINE COUNT ======"
+      wc -l oci_api_key.pem
+
+      echo "====== FIRST 2 LINES ======"
+      head -n 2 oci_api_key.pem
+
+      echo "====== LAST 2 LINES ======"
+      tail -n 2 oci_api_key.pem
+
+  - name: Run Hunter
+    env:
+
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+
+    run: python hunter.py
+```
