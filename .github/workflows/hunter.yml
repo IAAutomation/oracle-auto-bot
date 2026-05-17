@@ -27,14 +27,8 @@ jobs:
       - name: Run Oracle Hunter
         env:
 
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
           OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-
-          OCI_SUBNET_OCID: ${{ secrets.OCI_SUBNET_OCID }}
-          OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
 
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
 
