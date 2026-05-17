@@ -49,11 +49,11 @@ SSH_PUBLIC_KEY = os.environ["SSH_PUBLIC_KEY"]
 # =========================================================
 
 config = {
-"user": USER_OCID,
-"key_file": "oci_api_key.pem",
-"fingerprint": FINGERPRINT,
-"tenancy": TENANCY_OCID,
-"region": REGION,
+    "user": USER_OCID,
+    "key_file": "oci_api_key.pem",
+    "fingerprint": FINGERPRINT,
+    "tenancy": TENANCY_OCID,
+    "region": REGION,
 }
 
 compute_client = oci.core.ComputeClient(config)
@@ -65,21 +65,18 @@ compute_client = oci.core.ComputeClient(config)
 # =========================================================
 
 def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-```
-url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
 
-payload = {
-    "chat_id": TELEGRAM_CHAT_ID,
-    "text": message,
-    "parse_mode": "Markdown"
-}
-
-try:
-    requests.post(url, json=payload, timeout=20)
-except Exception as e:
-    print(f"Telegram Error: {e}")
-```
+    try:
+        requests.post(url, json=payload, timeout=20)
+    except Exception as e:
+        print(f"Telegram Error: {e}")
 
 # =========================================================
 
@@ -88,20 +85,17 @@ except Exception as e:
 # =========================================================
 
 def get_retry_window():
+    dubai = pytz.timezone("Asia/Dubai")
+    hour = datetime.now(dubai).hour
 
-```
-dubai = pytz.timezone("Asia/Dubai")
-hour = datetime.now(dubai).hour
+    if 0 <= hour < 7:
+        return "10 minutes"
 
-if 0 <= hour < 7:
-    return "10 minutes"
+    elif 7 <= hour < 18:
+        return "20 minutes"
 
-elif 7 <= hour < 18:
-    return "20 minutes"
-
-else:
-    return "15 minutes"
-```
+    else:
+        return "15 minutes"
 
 # =========================================================
 
@@ -110,19 +104,15 @@ else:
 # =========================================================
 
 def instance_exists():
+    instances = compute_client.list_instances(
+        compartment_id=COMPARTMENT_OCID
+    ).data
 
-```
-instances = compute_client.list_instances(
-    compartment_id=COMPARTMENT_OCID
-).data
+    for inst in instances:
+        if inst.display_name.startswith(INSTANCE_NAME):
+            return inst
 
-for inst in instances:
-
-    if inst.display_name.startswith(INSTANCE_NAME):
-        return inst
-
-return None
-```
+    return None
 
 # =========================================================
 
@@ -131,40 +121,36 @@ return None
 # =========================================================
 
 def launch_instance(memory):
+    details = oci.core.models.LaunchInstanceDetails(
+        compartment_id=COMPARTMENT_OCID,
 
-```
-details = oci.core.models.LaunchInstanceDetails(
+        availability_domain=AVAILABILITY_DOMAIN,
 
-    compartment_id=COMPARTMENT_OCID,
+        shape=SHAPE,
 
-    availability_domain=AVAILABILITY_DOMAIN,
+        display_name=f"{INSTANCE_NAME}-{memory}gb",
 
-    shape=SHAPE,
+        shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
+            ocpus=1,
+            memory_in_gbs=memory
+        ),
 
-    display_name=f"{INSTANCE_NAME}-{memory}gb",
+        create_vnic_details=oci.core.models.CreateVnicDetails(
+            subnet_id=SUBNET_OCID,
+            assign_public_ip=True
+        ),
 
-    shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
-        ocpus=1,
-        memory_in_gbs=memory
-    ),
+        source_details=oci.core.models.InstanceSourceViaImageDetails(
+            source_type="image",
+            image_id=IMAGE_ID
+        ),
 
-    create_vnic_details=oci.core.models.CreateVnicDetails(
-        subnet_id=SUBNET_OCID,
-        assign_public_ip=True
-    ),
+        metadata={
+            "ssh_authorized_keys": SSH_PUBLIC_KEY
+        }
+    )
 
-    source_details=oci.core.models.InstanceSourceViaImageDetails(
-        source_type="image",
-        image_id=IMAGE_ID
-    ),
-
-    metadata={
-        "ssh_authorized_keys": SSH_PUBLIC_KEY
-    }
-)
-
-return compute_client.launch_instance(details)
-```
+    return compute_client.launch_instance(details)
 
 # =========================================================
 
@@ -173,14 +159,10 @@ return compute_client.launch_instance(details)
 # =========================================================
 
 def main():
+    retry_window = get_retry_window()
 
-```
-retry_window = get_retry_window()
-
-send_telegram(
-```
-
-f"""🚀 *Oracle ARM Hunter Started*
+    send_telegram(
+        f"""🚀 *Oracle ARM Hunter Started*
 
 📍 Region: `{REGION}`
 💻 Shape: `{SHAPE}`
@@ -195,17 +177,13 @@ f"""🚀 *Oracle ARM Hunter Started*
 `{retry_window}`
 
 Oracle free-tier combat initiated."""
-)
+    )
 
-```
-existing = instance_exists()
+    existing = instance_exists()
 
-if existing:
-
-    send_telegram(
-```
-
-f"""✅ *Instance Already Exists*
+    if existing:
+        send_telegram(
+            f"""✅ *Instance Already Exists*
 
 🖥 Name:
 `{existing.display_name}`
@@ -214,36 +192,28 @@ f"""✅ *Instance Already Exists*
 `{existing.lifecycle_state}`
 
 No further action required."""
-)
+        )
+        return
 
-```
-    return
+    # =====================================================
+    # TRY 6GB
+    # =====================================================
 
-# =====================================================
-# TRY 6GB
-# =====================================================
-
-send_telegram(
-```
-
-"""🟡 *Attempt #1*
+    send_telegram(
+        """🟡 *Attempt #1*
 
 Trying preferred configuration:
 
 • 1 OCPU
 • 6GB RAM
 """
-)
+    )
 
-```
-try:
+    try:
+        response = launch_instance(6)
 
-    response = launch_instance(6)
-
-    send_telegram(
-```
-
-f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
+        send_telegram(
+            f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
 
 ✅ Configuration:
 • 1 OCPU
@@ -253,58 +223,46 @@ f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
 `{response.data.id}`
 
 Human persistence defeated cloud scarcity."""
-)
+        )
+        return
 
-```
-    return
+    except Exception as e:
+        error = str(e)
 
-except Exception as e:
-
-    error = str(e)
-
-    send_telegram(
-```
-
-f"""❌ *6GB Attempt Failed*
+        send_telegram(
+            f"""❌ *6GB Attempt Failed*
 
 `{error[:1200]}`
 
 ⏳ Waiting 60 seconds before fallback attempt...
 """
-)
+        )
 
-```
-# =====================================================
-# WAIT
-# =====================================================
+    # =====================================================
+    # WAIT
+    # =====================================================
 
-time.sleep(60)
+    time.sleep(60)
 
-# =====================================================
-# TRY 4GB
-# =====================================================
+    # =====================================================
+    # TRY 4GB
+    # =====================================================
 
-send_telegram(
-```
-
-"""🟠 *Attempt #2*
+    send_telegram(
+        """🟠 *Attempt #2*
 
 Trying fallback configuration:
 
 • 1 OCPU
 • 4GB RAM
 """
-)
+    )
 
-```
-try:
+    try:
+        response = launch_instance(4)
 
-    response = launch_instance(4)
-
-    send_telegram(
-```
-
-f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
+        send_telegram(
+            f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
 
 ✅ Configuration:
 • 1 OCPU
@@ -314,19 +272,14 @@ f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
 `{response.data.id}`
 
 Oracle briefly allowed happiness."""
-)
+        )
+        return
 
-```
-    return
+    except Exception as e:
+        error = str(e)
 
-except Exception as e:
-
-    error = str(e)
-
-    send_telegram(
-```
-
-f"""❌ *Fallback Attempt Failed*
+        send_telegram(
+            f"""❌ *Fallback Attempt Failed*
 
 `{error[:1200]}`
 
@@ -334,7 +287,7 @@ f"""❌ *Fallback Attempt Failed*
 `{retry_window}`
 
 Capacity remains unavailable."""
-)
+        )
 
-if **name** == "**main**":
-main()
+if __name__ == "__main__":
+    main()
