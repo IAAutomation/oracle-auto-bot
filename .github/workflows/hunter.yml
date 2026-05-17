@@ -8,6 +8,7 @@ on:
 
 jobs:
   hunter:
+
     runs-on: ubuntu-latest
 
     steps:
@@ -22,18 +23,15 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install -r requirements.txt
+          pip install oci requests pytz
 
       - name: Run Oracle Hunter
-        env:
 
+        env:
           OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-        run: |
-          python hunter.py
+        run: python hunter.py
