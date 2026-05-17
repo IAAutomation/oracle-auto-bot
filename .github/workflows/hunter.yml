@@ -6,13 +6,14 @@ workflow_dispatch:
 schedule:
 
 ```
-# Night Hunter (Dubai 12AM → 7AM)
-- cron: "*/10 20-23,0-2 * * *"
+# Night Hunter
+- cron: "*/10 20-23 * * *"
+- cron: "*/10 0-2 * * *"
 
-# Day Hunter (Dubai 7AM → 6PM)
+# Day Hunter
 - cron: "*/20 3-13 * * *"
 
-# Evening Hunter (Dubai 6PM → 12AM)
+# Evening Hunter
 - cron: "*/15 14-19 * * *"
 ```
 
@@ -45,7 +46,6 @@ steps:
 
   - name: Run Hunter
     env:
-
       OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
 
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
