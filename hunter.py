@@ -1,293 +1,296 @@
 import os
-import time
-import requests
 import oci
-from datetime import datetime
 import pytz
+import requests
+
+from datetime import datetime
 
 # =========================================================
+# TELEGRAM
+# =========================================================
 
-# OCI CONFIG
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
+# =========================================================
+# SENSITIVE VALUES FROM GITHUB SECRETS
+# =========================================================
+
+FINGERPRINT = os.environ["OCI_FINGERPRINT"]
+
+PRIVATE_KEY = os.environ["OCI_PRIVATE_KEY"]
+
+SSH_PUBLIC_KEY = os.environ["SSH_PUBLIC_KEY"]
+
+# =========================================================
+# HARD CODED OCI VALUES
 # =========================================================
 
 USER_OCID = "ocid1.user.oc1..aaaaaaaacn36y6qx6cu4ldjefc2qbu7yaa5t2arc3yvbzt7abzjtwls4i7ha"
 
 TENANCY_OCID = "ocid1.tenancy.oc1..aaaaaaaaxh2rr7l5fgr3wpsxjv2gddobecb2klfiboaa7nu3ry32qutzvihq"
 
-COMPARTMENT_OCID = "ocid1.tenancy.oc1..aaaaaaaaxh2rr7l5fgr3wpsxjv2gddobecb2klfiboaa7nu3ry32qutzvihq"
+REGION = "me-dubai-1"
 
 SUBNET_OCID = "ocid1.subnet.oc1.me-dubai-1.aaaaaaaad27ivni7hdkuznhsgdavuaqidm3xv5naihq5w4dly4zl7dx2fbka"
 
-REGION = "me-dubai-1"
-
 AVAILABILITY_DOMAIN = "TnTd:ME-DUBAI-1-AD-1"
 
-SHAPE = "VM.Standard.A1.Flex"
-
-INSTANCE_NAME = "openclaw-arm"
+# =========================================================
+# UBUNTU 24 ARM IMAGE
+# =========================================================
 
 IMAGE_ID = "ocid1.image.oc1.me-dubai-1.aaaaaaaab352mbi4vcyymzs4ccln576k34khc357fk2hlaqx3cuzjclgkoea"
 
 # =========================================================
-
-# ENV VARIABLES
-
-# =========================================================
-
-FINGERPRINT = os.environ["OCI_FINGERPRINT"]
-
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-
-SSH_PUBLIC_KEY = os.environ["SSH_PUBLIC_KEY"]
-
-# =========================================================
-
-# OCI CLIENT
-
+# OCI CONFIG
 # =========================================================
 
 config = {
     "user": USER_OCID,
-    "key_file": "oci_api_key.pem",
+    "key_content": PRIVATE_KEY,
     "fingerprint": FINGERPRINT,
     "tenancy": TENANCY_OCID,
     "region": REGION,
 }
 
-compute_client = oci.core.ComputeClient(config)
-
+# =========================================================
+# SHAPE PRIORITY
 # =========================================================
 
-# TELEGRAM
+INSTANCE_CONFIGS = [
+    {
+        "ocpus": 1,
+        "memory": 6
+    },
+    {
+        "ocpus": 1,
+        "memory": 4
+    }
+]
 
+# =========================================================
+# TELEGRAM FUNCTION
 # =========================================================
 
 def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    data = {
+        "chat_id": CHAT_ID,
         "text": message,
         "parse_mode": "Markdown"
     }
 
     try:
-        requests.post(url, json=payload, timeout=20)
-    except Exception as e:
-        print(f"Telegram Error: {e}")
+        requests.post(url, data=data, timeout=15)
+    except:
+        pass
 
 # =========================================================
-
-# RETRY WINDOW
-
+# SMART TIME STRATEGY
 # =========================================================
 
-def get_retry_window():
-    dubai = pytz.timezone("Asia/Dubai")
-    hour = datetime.now(dubai).hour
+pakistan = pytz.timezone("Asia/Karachi")
 
-    if 0 <= hour < 7:
-        return "10 minutes"
+now = datetime.now(pakistan)
 
-    elif 7 <= hour < 18:
-        return "20 minutes"
+hour = now.hour
+minute = now.minute
 
-    else:
-        return "15 minutes"
+run_now = False
+mode = ""
 
-# =========================================================
+# 1AM → 8AM PKT
+# Every 10 mins
 
-# CHECK EXISTING INSTANCE
+if 1 <= hour < 8:
 
-# =========================================================
+    run_now = True
+    mode = "HIGH SUCCESS WINDOW"
 
-def instance_exists():
-    instances = compute_client.list_instances(
-        compartment_id=COMPARTMENT_OCID
-    ).data
+# 8AM → 7PM PKT
+# Every 20 mins
 
-    for inst in instances:
-        if inst.display_name.startswith(INSTANCE_NAME):
-            return inst
+elif 8 <= hour < 19:
 
-    return None
+    if minute % 20 == 0:
 
-# =========================================================
+        run_now = True
+        mode = "LOW SUCCESS WINDOW"
 
-# CREATE INSTANCE
+# 7PM → 1AM PKT
+# Every 15 mins
 
-# =========================================================
+else:
 
-def launch_instance(memory):
-    details = oci.core.models.LaunchInstanceDetails(
-        compartment_id=COMPARTMENT_OCID,
+    if minute % 15 == 0:
 
-        availability_domain=AVAILABILITY_DOMAIN,
-
-        shape=SHAPE,
-
-        display_name=f"{INSTANCE_NAME}-{memory}gb",
-
-        shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
-            ocpus=1,
-            memory_in_gbs=memory
-        ),
-
-        create_vnic_details=oci.core.models.CreateVnicDetails(
-            subnet_id=SUBNET_OCID,
-            assign_public_ip=True
-        ),
-
-        source_details=oci.core.models.InstanceSourceViaImageDetails(
-            source_type="image",
-            image_id=IMAGE_ID
-        ),
-
-        metadata={
-            "ssh_authorized_keys": SSH_PUBLIC_KEY
-        }
-    )
-
-    return compute_client.launch_instance(details)
+        run_now = True
+        mode = "MEDIUM SUCCESS WINDOW"
 
 # =========================================================
-
-# MAIN
-
+# SKIP CYCLE
 # =========================================================
 
-def main():
-    retry_window = get_retry_window()
+if not run_now:
 
-    send_telegram(
-        f"""🚀 *Oracle ARM Hunter Started*
+    print("Skipping current retry cycle.")
+    exit()
 
-📍 Region: `{REGION}`
-💻 Shape: `{SHAPE}`
-🖥 Image: `Ubuntu 24.04 ARM Minimal`
+# =========================================================
+# START MESSAGE
+# =========================================================
 
-📋 Attempt Order:
+start_message = f"""
+🚀 ORACLE HUNTER STARTED
 
-1️⃣ 1 OCPU / 6GB
-2️⃣ 1 OCPU / 4GB
+🕒 Time:
+{now.strftime('%Y-%m-%d %I:%M %p PKT')}
 
-🔁 Retry Window:
-`{retry_window}`
+🎯 Strategy:
+{mode}
 
-Oracle free-tier combat initiated."""
-    )
+🌍 Region:
+Dubai
 
-    existing = instance_exists()
+💻 Target Shapes:
+• 1 OCPU / 6 GB
+• 1 OCPU / 4 GB
 
-    if existing:
-        send_telegram(
-            f"""✅ *Instance Already Exists*
-
-🖥 Name:
-`{existing.display_name}`
-
-📌 State:
-`{existing.lifecycle_state}`
-
-No further action required."""
-        )
-        return
-
-    # =====================================================
-    # TRY 6GB
-    # =====================================================
-
-    send_telegram(
-        """🟡 *Attempt #1*
-
-Trying preferred configuration:
-
-• 1 OCPU
-• 6GB RAM
+⚡ Starting Oracle ARM capacity search...
 """
-    )
+
+send_telegram(start_message)
+
+# =========================================================
+# OCI CLIENT
+# =========================================================
+
+compute_client = oci.core.ComputeClient(config)
+
+# =========================================================
+# MAIN LOOP
+# =========================================================
+
+success = False
+
+for config_item in INSTANCE_CONFIGS:
+
+    ocpus = config_item["ocpus"]
+    memory = config_item["memory"]
 
     try:
-        response = launch_instance(6)
 
-        send_telegram(
-            f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
+        attempt_message = f"""
+🔄 TRYING INSTANCE
 
-✅ Configuration:
-• 1 OCPU
-• 6GB RAM
+⚙️ OCPUs:
+{ocpus}
+
+🧠 Memory:
+{memory} GB
+
+⏳ Sending request to Oracle...
+"""
+
+        send_telegram(attempt_message)
+
+        launch_details = oci.core.models.LaunchInstanceDetails(
+
+            compartment_id=TENANCY_OCID,
+
+            availability_domain=AVAILABILITY_DOMAIN,
+
+            display_name=f"Hunter-{ocpus}CPU-{memory}GB",
+
+            shape="VM.Standard.A1.Flex",
+
+            shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
+                ocpus=ocpus,
+                memory_in_gbs=memory
+            ),
+
+            create_vnic_details=oci.core.models.CreateVnicDetails(
+                subnet_id=SUBNET_OCID,
+                assign_public_ip=True
+            ),
+
+            metadata={
+                "ssh_authorized_keys": SSH_PUBLIC_KEY
+            },
+
+            source_details=oci.core.models.InstanceSourceViaImageDetails(
+                source_type="image",
+                image_id=IMAGE_ID
+            )
+        )
+
+        response = compute_client.launch_instance(launch_details)
+
+        success_message = f"""
+🎉 INSTANCE CREATED SUCCESSFULLY
+
+🔥 Oracle ARM capacity FOUND
+
+⚙️ OCPUs:
+{ocpus}
+
+🧠 Memory:
+{memory} GB
 
 🆔 Instance ID:
-`{response.data.id}`
+{response.data.id}
 
-Human persistence defeated cloud scarcity."""
-        )
-        return
-
-    except Exception as e:
-        error = str(e)
-
-        send_telegram(
-            f"""❌ *6GB Attempt Failed*
-
-`{error[:1200]}`
-
-⏳ Waiting 60 seconds before fallback attempt...
+🚀 Your server is launching now.
 """
-        )
 
-    # =====================================================
-    # WAIT
-    # =====================================================
+        send_telegram(success_message)
 
-    time.sleep(60)
+        success = True
 
-    # =====================================================
-    # TRY 4GB
-    # =====================================================
+        break
 
-    send_telegram(
-        """🟠 *Attempt #2*
+    except Exception as error:
 
-Trying fallback configuration:
+        fail_message = f"""
+❌ INSTANCE FAILED
 
-• 1 OCPU
-• 4GB RAM
+⚙️ OCPUs:
+{ocpus}
+
+🧠 Memory:
+{memory} GB
+
+📄 Error:
+{str(error)[:400]}
+
+🔁 Trying next configuration...
 """
-    )
 
-    try:
-        response = launch_instance(4)
+        send_telegram(fail_message)
 
-        send_telegram(
-            f"""🎉 *INSTANCE CREATED SUCCESSFULLY*
+# =========================================================
+# FINAL RESULT
+# =========================================================
 
-✅ Configuration:
-• 1 OCPU
-• 4GB RAM
+if not success:
 
-🆔 Instance ID:
-`{response.data.id}`
+    final_message = f"""
+🚫 NO ORACLE CAPACITY AVAILABLE
 
-Oracle briefly allowed happiness."""
-        )
-        return
+🕒 Time:
+{now.strftime('%Y-%m-%d %I:%M %p PKT')}
 
-    except Exception as e:
-        error = str(e)
+📊 Tried:
+• 1 OCPU / 6 GB
+• 1 OCPU / 4 GB
 
-        send_telegram(
-            f"""❌ *Fallback Attempt Failed*
+🔁 Hunter will retry automatically.
 
-`{error[:1200]}`
+🧠 Strategy:
+{mode}
+"""
 
-🔁 Next retry automatically in:
-`{retry_window}`
-
-Capacity remains unavailable."""
-        )
-
-if __name__ == "__main__":
-    main()
+    send_telegram(final_message)
